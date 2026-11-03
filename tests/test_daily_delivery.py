@@ -10,6 +10,7 @@ from zotero_arxiv_daily.executor import Executor
 from zotero_arxiv_daily.protocol import Paper, CorpusPaper
 from zotero_arxiv_daily.retriever.arxiv_retriever import ArxivRetriever
 from zotero_arxiv_daily import network
+from zotero_arxiv_daily.construct_email import render_email
 
 
 def make_paper(i):
@@ -127,3 +128,13 @@ def test_transient_failure_is_bounded(monkeypatch):
         network.read_feed("https://arxiv.org")
     assert len(calls) == 10
     assert max(sleeps) <= 60
+
+
+def test_tldr_failure_is_labelled_in_email(monkeypatch):
+    paper = make_paper(1)
+    def fail(*args):
+        raise ValueError("LLM endpoint returned 404")
+    monkeypatch.setattr(Paper, "_generate_tldr_with_llm", fail)
+    assert paper.generate_tldr(None, {}) == paper.abstract
+    assert not paper.tldr_generated
+    assert "原文摘要（TLDR 服务不可用）" in render_email([paper])

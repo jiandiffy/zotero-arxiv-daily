@@ -1,5 +1,6 @@
 name: Send emails daily
 on:
+  workflow_call:
   workflow_dispatch:
   schedule:
     # 08:17 Asia/Taipei (UTC+8); avoid the top-of-hour queue.

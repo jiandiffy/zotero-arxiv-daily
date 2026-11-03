@@ -21,6 +21,7 @@ class Paper:
     affiliations: Optional[list[str]] = None
     score: Optional[float] = None
     published_date: Optional[str] = None
+    tldr_generated: bool = False
 
     def _generate_tldr_with_llm(self, openai_client:OpenAI,llm_params:dict) -> str:
         lang = llm_params.get('language', 'English')
@@ -60,12 +61,16 @@ class Paper:
     def generate_tldr(self, openai_client:OpenAI,llm_params:dict) -> str:
         try:
             tldr = self._generate_tldr_with_llm(openai_client,llm_params)
+            if not tldr or not tldr.strip():
+                raise ValueError("LLM returned an empty TLDR")
             self.tldr = tldr
+            self.tldr_generated = True
             return tldr
         except Exception as e:
             logger.warning(f"Failed to generate tldr of {self.url}: {e}")
             tldr = self.abstract
             self.tldr = tldr
+            self.tldr_generated = False
             return tldr
 
     def _generate_affiliations_with_llm(self, openai_client:OpenAI,llm_params:dict) -> Optional[list[str]]:

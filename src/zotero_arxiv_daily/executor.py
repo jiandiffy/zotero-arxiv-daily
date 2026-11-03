@@ -123,6 +123,10 @@ class Executor:
             for p in tqdm(reranked_papers):
                 p.generate_tldr(self.openai_client, self.config.llm)
                 p.generate_affiliations(self.openai_client, self.config.llm)
+            fallback_count = sum(not p.tldr_generated for p in reranked_papers)
+            if fallback_count:
+                logger.warning(f"TLDR unavailable for {fallback_count} papers; using explicitly labelled original abstracts")
+                summary(f"TLDR fallback: **{fallback_count}** papers use original abstracts; check the configured LLM endpoint/model.")
         elif not self.config.executor.send_empty:
             logger.info("No new papers found. No email will be sent.")
             return

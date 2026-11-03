@@ -53,7 +53,7 @@ def get_empty_html():
   """
   return block_template
 
-def get_block_html(title:str, authors:str, rate:str, tldr:str, pdf_url:str, affiliations:str=None):
+def get_block_html(title:str, authors:str, rate:str, tldr:str, pdf_url:str, affiliations:str=None, summary_label:str="TLDR"):
     block_template = """
     <table border="0" cellpadding="0" cellspacing="0" width="100%" style="font-family: Arial, sans-serif; border: 1px solid #ddd; border-radius: 8px; padding: 16px; background-color: #f9f9f9;">
     <tr>
@@ -75,7 +75,7 @@ def get_block_html(title:str, authors:str, rate:str, tldr:str, pdf_url:str, affi
     </tr>
     <tr>
         <td style="font-size: 14px; color: #333; padding: 8px 0;">
-            <strong>TLDR:</strong> {tldr}
+            <strong>{summary_label}:</strong> {tldr}
         </td>
     </tr>
 
@@ -86,7 +86,7 @@ def get_block_html(title:str, authors:str, rate:str, tldr:str, pdf_url:str, affi
     </tr>
 </table>
 """
-    return block_template.format(title=title, authors=authors,rate=rate, tldr=tldr, pdf_url=pdf_url, affiliations=affiliations)
+    return block_template.format(title=title, authors=authors,rate=rate, tldr=tldr, pdf_url=pdf_url, affiliations=affiliations, summary_label=summary_label)
 
 def get_stars(score:float):
     full_star = '<span class="full-star">⭐</span>'
@@ -129,7 +129,8 @@ def render_email(papers:list[Paper]) -> str:
         title = escape(p.title)
         if p.published_date:
             title += f"<br><small>arXiv 首次提交：{escape(p.published_date)}</small>"
-        parts.append(get_block_html(title, escape(authors), rate, escape(p.tldr or p.abstract), escape(p.pdf_url or p.url, quote=True), escape(affiliations)))
+        label = "TLDR" if p.tldr_generated else "原文摘要（TLDR 服务不可用）"
+        parts.append(get_block_html(title, escape(authors), rate, escape(p.tldr or p.abstract), escape(p.pdf_url or p.url, quote=True), escape(affiliations), label))
 
     content = f'<p>今日推荐 {len(papers)} 篇：按 Zotero 文献相关性排序，来自近期论文池，排除已推送文章。首次提交日期见各条目。</p><br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)
