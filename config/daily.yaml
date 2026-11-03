@@ -1,0 +1,29 @@
+defaults:
+  - base
+  - custom
+  - _self_
+
+# Override CUSTOM_CONFIG's retrieval settings while retaining account settings.
+source:
+  arxiv:
+    category: [cs.AI, cs.CV, cs.RO]
+    include_cross_list: true
+    retrieval_mode: recent_api
+    lookback_days: 30
+    candidates_per_category: 200
+    metadata_only: true
+
+executor:
+  debug: false
+  source: [arxiv]
+  max_paper_num: 10
+  min_paper_num: 10
+  history_path: .state/delivery.json
+
+llm:
+  language: Chinese
+
+reranker:
+  local:
+    model: sentence-transformers/all-MiniLM-L6-v2
+    encode_kwargs: null

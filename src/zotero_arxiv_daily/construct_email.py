@@ -1,5 +1,6 @@
 from .protocol import Paper
 import math
+from html import escape
 
 
 framework = """
@@ -125,7 +126,10 @@ def render_email(papers:list[Paper]) -> str:
                 affiliations += ', ...'
         else:
             affiliations = 'Unknown Affiliation'
-        parts.append(get_block_html(p.title, authors, rate, p.tldr, p.pdf_url, affiliations))
+        title = escape(p.title)
+        if p.published_date:
+            title += f"<br><small>arXiv 首次提交：{escape(p.published_date)}</small>"
+        parts.append(get_block_html(title, escape(authors), rate, escape(p.tldr or p.abstract), escape(p.pdf_url or p.url, quote=True), escape(affiliations)))
 
-    content = '<br>' + '</br><br>'.join(parts) + '</br>'
+    content = f'<p>今日推荐 {len(papers)} 篇：按 Zotero 文献相关性排序，来自近期论文池，排除已推送文章。首次提交日期见各条目。</p><br>' + '</br><br>'.join(parts) + '</br>'
     return framework.replace('__CONTENT__', content)

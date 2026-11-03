@@ -14,7 +14,7 @@ def test_arxiv_retriever(config, monkeypatch):
         if url == f"https://rss.arxiv.org/atom/{'+'.join(config.source.arxiv.category)}":
             return parsed_result
         return raw_parser(url)
-    monkeypatch.setattr(feedparser, "parse", mock_feedparser_parse)
+    monkeypatch.setattr("zotero_arxiv_daily.retriever.arxiv_retriever.read_feed", mock_feedparser_parse)
     
     retriever = ArxivRetriever(config)
     papers = retriever.retrieve_papers()

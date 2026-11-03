@@ -2,6 +2,7 @@ import tarfile
 import re
 import glob
 import smtplib
+import ssl
 from email.header import Header
 from email.mime.text import MIMEText
 from email.utils import parseaddr, formataddr
@@ -16,6 +17,15 @@ pymupdf.layout.activate()
 import pymupdf4llm  # noqa: E402
 
 def extract_tex_code_from_tar(file_path:str, paper_id:str) -> dict[str,str]:
+    if int(smtp_port) == 465:
+        # Port 465 expects TLS immediately; a plaintext greeting can hang.
+        with smtplib.SMTP_SSL(smtp_server, smtp_port, timeout=45, context=ssl.create_default_context()) as server:
+            server.login(sender, password)
+            refused = server.sendmail(sender, [receiver], msg.as_string())
+            if refused:
+                raise RuntimeError("SMTP refused the configured recipient")
+        return
+
     try:
         tar = tarfile.open(file_path)
     except tarfile.ReadError:

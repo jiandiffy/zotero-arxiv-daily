@@ -212,3 +212,15 @@ If you find this project helpful, welcome to sponsor me via WeChat or via [ko-fi
 ## 🌟 Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=TideDra/zotero-arxiv-daily&type=Date)](https://star-history.com/#TideDra/zotero-arxiv-daily&Date)
+# 此仓库的每日 10 篇设置
+
+`Send emails daily` 每天计划在 **Asia/Taipei 08:17** 执行（GitHub 排队可能延迟），也可手动运行。修改 `config/daily.yaml` 或主工作流后会运行一次验证；同日已有成功发送记录时跳过。
+
+- 使用 arXiv HTTPS API，订阅 `cs.AI / cs.CV / cs.RO`（包含交叉分类），每类取最近 30 天内最新的最多 200 篇，再按 Zotero 文献的语义相似度推荐 10 篇。周末仍可从近期未推送的论文中推荐。
+- 根据摘要排序并生成中文 TLDR，无需批量下载 PDF。邮件标明首次提交日期；“每日推荐”不代表全部是当天发表。
+- `config/daily.yaml` 的数量和抓取设置优先于 `CUSTOM_CONFIG`；既有 Zotero、邮箱和 LLM 账户配置继续使用 GitHub Secrets 和 `CUSTOM_CONFIG`。
+- `.state/delivery.json` 保存已发送 arXiv ID，避免论文版本变化或手动重跑造成重复推荐。并发运行排队，成功后由 Actions 提交历史；历史提交不会触发再次发送。
+- Actions Summary 显示 Zotero 文献数、抓取数、未推送候选数及 SMTP 接受的数量。抓取失败或不足 10 篇时明确失败；可增大 `lookback_days` / `candidates_per_category`。网络读取最多重试 10 次、15 分钟，邮件发送不会自动重试。
+- 若 SMTP 结果不确定，历史包含 `pending`，后续运行会停止以免重复发送。先核对收件箱：已收到时将 pending 中的 ID 和日期写入 `sent` 并设置 `last_sent_date`；确认未发出时移除 pending 后再运行。若历史提交失败，先从该次运行的 `delivery-checkpoint-*` artifact 恢复状态，再重跑。
+
+本次问题：旧程序只读取每日 RSS，RSS 为空时直接以成功状态退出且不发邮件；空响应无法代表近期没有相关文章。新日报独立于 RSS，并对 HTTP 状态和 Atom 内容进行校验。

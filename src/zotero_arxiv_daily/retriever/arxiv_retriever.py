@@ -12,12 +12,20 @@ import os
 import time
 import random
 from loguru import logger
+from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
+from ..network import read_feed
 
 PDF_EXTRACT_TIMEOUT = 180
 
 
 @register_retriever("arxiv")
 class ArxivRetriever(BaseRetriever):
+    def retrieve_papers(self) -> list[Paper]:
+        if self.config.source.arxiv.get("metadata_only", False):
+            return [self.convert_to_paper(raw) for raw in self._retrieve_raw_papers()]
+        return super().retrieve_papers()
+
     def __init__(self, config):
         super().__init__(config)
         if self.config.source.arxiv.category is None:
@@ -101,11 +109,13 @@ class ArxivRetriever(BaseRetriever):
         ) from last_exc
 
     def _retrieve_raw_papers(self) -> list[ArxivResult]:
+        if self.config.source.arxiv.get("retrieval_mode", "rss") == "recent_api":
+            return self._retrieve_recent_papers()
         query = "+".join(self.config.source.arxiv.category)
         include_cross_list = self.config.source.arxiv.get("include_cross_list", False)
 
         # 先从 RSS 拿最新 paper id
-        feed = feedparser.parse(f"https://rss.arxiv.org/atom/{query}")
+        feed = read_feed(f"https://rss.arxiv.org/atom/{query}")
         feed_title = getattr(feed.feed, "title", "")
         if "Feed error for query" in feed_title:
             raise Exception(f"Invalid ARXIV_QUERY: {query}.")
@@ -161,11 +171,54 @@ class ArxivRetriever(BaseRetriever):
         bar.close()
         return raw_papers
 
+    def _retrieve_recent_papers(self) -> list[ArxivResult]:
+        """Use bounded category searches instead of treating an empty daily RSS as success."""
+        settings = self.config.source.arxiv
+        cutoff = datetime.now(timezone.utc) - timedelta(days=int(settings.lookback_days))
+        limit = int(settings.candidates_per_category)
+        if not 10 <= limit <= 2000:
+            raise ValueError("candidates_per_category must be between 10 and 2000")
+        papers = {}
+        for index, category in enumerate(settings.category):
+            if index:
+                time.sleep(max(3, self.request_delay))
+            query = f"cat:{category} AND submittedDate:[{cutoff:%Y%m%d%H%M} TO 300001010000]"
+            url = "https://export.arxiv.org/api/query?" + urlencode({
+                "search_query": query, "start": 0, "max_results": limit,
+                "sortBy": "submittedDate", "sortOrder": "descending",
+            })
+            feed = read_feed(url)
+            logger.info(f"arXiv API category={category}, lookback={settings.lookback_days} days, entries={len(feed.entries)}")
+            for entry in feed.entries:
+                result = ArxivResult(
+                    entry_id=entry.id,
+                    updated=datetime.fromisoformat(entry.updated.replace("Z", "+00:00")),
+                    published=datetime.fromisoformat(entry.published.replace("Z", "+00:00")),
+                    title=" ".join(entry.title.split()), summary=entry.summary,
+                    authors=[ArxivResult.Author(a.name) for a in entry.authors],
+                    primary_category=entry.arxiv_primary_category["term"],
+                    categories=[tag.term for tag in entry.tags],
+                    links=[ArxivResult.Link(link.href, title=link.get("title"), rel=link.get("rel", ""),
+                                            content_type=link.get("type")) for link in entry.links],
+                )
+                if not settings.get("include_cross_list", False) and result.primary_category not in settings.category:
+                    continue
+                papers[result.get_short_id().split("v")[0]] = result
+        if not papers:
+            raise RuntimeError("arXiv API returned zero papers across the recent search window; check feed availability and query")
+        logger.info(f"arXiv API returned {len(papers)} unique candidates; daily RSS is not required")
+        return list(papers.values())
+
     def convert_to_paper(self, raw_paper: ArxivResult) -> Paper:
         title = raw_paper.title
         authors = [a.name for a in raw_paper.authors]
         abstract = raw_paper.summary
         pdf_url = raw_paper.pdf_url
+
+        if self.config.source.arxiv.get("metadata_only", False):
+            return Paper(source=self.name, title=title, authors=authors, abstract=abstract,
+                         url=raw_paper.entry_id, pdf_url=pdf_url,
+                         published_date=raw_paper.published.date().isoformat())
 
         try:
             with ThreadPoolExecutor(max_workers=1) as pool:

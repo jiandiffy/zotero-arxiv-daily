@@ -11,6 +11,7 @@ from .construct_email import render_email
 from .utils import send_email
 from openai import OpenAI
 from tqdm import tqdm
+from .delivery import read_history, record_attempt, record_delivery, paper_key, today, summary
 
 
 def normalize_include_path_patterns(include_path: list[str] | ListConfig | None) -> list[str] | None:
@@ -81,11 +82,19 @@ class Executor:
 
     
     def run(self):
+        history_path = self.config.executor.get("history_path")
+        history = read_history(history_path) if history_path else {"sent": {}}
+        if history.get("pending"):
+            raise RuntimeError("Previous SMTP delivery outcome is unknown. Check the recipient mailbox and resolve the pending delivery checkpoint before retrying.")
+        if history_path and history.get("last_sent_date") == today():
+            logger.info("Today's digest was already sent; skipping duplicate delivery")
+            summary(f"Already delivered on {today()} (Asia/Taipei); no duplicate email sent.")
+            return
         corpus = self.fetch_zotero_corpus()
         corpus = self.filter_corpus(corpus)
         if len(corpus) == 0:
-            logger.error(f"No zotero papers found. Please check your zotero settings:\n{self.config.zotero}")
-            return
+            raise RuntimeError("No Zotero papers with abstracts match the configured collections; check Zotero access and include_path")
+        summary(f"Zotero reference papers: **{len(corpus)}**")
         all_papers = []
         for source, retriever in self.retrievers.items():
             logger.info(f"Retrieving {source} papers...")
@@ -96,11 +105,20 @@ class Executor:
             logger.info(f"Retrieved {len(papers)} {source} papers")
             all_papers.extend(papers)
         logger.info(f"Total {len(all_papers)} papers retrieved from all sources")
+        summary(f"Retrieved candidates: **{len(all_papers)}**")
+        unique_papers = {paper_key(p.url): p for p in all_papers}
+        all_papers = [p for key, p in unique_papers.items() if key not in history["sent"]]
+        minimum = int(self.config.executor.get("min_paper_num", 0))
+        summary(f"Unsent unique candidates: **{len(all_papers)}**; requested: **{self.config.executor.max_paper_num}**")
+        if len(all_papers) < minimum:
+            raise RuntimeError(f"Only {len(all_papers)} unsent papers available; required {minimum}. No email sent; increase the recent search window/pool.")
         reranked_papers = []
         if len(all_papers) > 0:
             logger.info("Reranking papers...")
             reranked_papers = self.reranker.rerank(all_papers, corpus)
             reranked_papers = reranked_papers[:self.config.executor.max_paper_num]
+            if len(reranked_papers) < minimum:
+                raise RuntimeError(f"Reranker returned fewer than {minimum} papers; no email sent")
             logger.info("Generating TLDR and affiliations...")
             for p in tqdm(reranked_papers):
                 p.generate_tldr(self.openai_client, self.config.llm)
@@ -110,5 +128,10 @@ class Executor:
             return
         logger.info("Sending email...")
         email_content = render_email(reranked_papers)
+        if history_path:
+            record_attempt(history_path, history, reranked_papers)
         send_email(self.config, email_content)
+        if history_path:
+            record_delivery(history_path, history, reranked_papers)
         logger.info("Email sent successfully")
+        summary(f"SMTP accepted **{len(reranked_papers)} papers** on {today()} (Asia/Taipei). Delivery history saved.")

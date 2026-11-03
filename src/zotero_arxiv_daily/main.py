@@ -6,6 +6,7 @@ import hydra
 from loguru import logger
 import dotenv
 from zotero_arxiv_daily.executor import Executor
+from zotero_arxiv_daily.delivery import summary
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 dotenv.load_dotenv()
 
@@ -28,8 +29,12 @@ def main(config:DictConfig):
     if config.executor.debug:
         logger.info("Debug mode is enabled")
     
-    executor = Executor(config)
-    executor.run()
+    try:
+        executor = Executor(config)
+        executor.run()
+    except Exception:
+        summary("**FAILED**: retrieval, ranking or delivery did not finish. See the failing step logs; this is not a confirmed 'no new papers' day.")
+        raise
 
 if __name__ == '__main__':
     main()
